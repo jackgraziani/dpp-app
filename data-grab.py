@@ -13,40 +13,32 @@ import pytz
 
 def return_open_and_current(ticker_string):
     open_and_current = []
-    
     ticker = yf.Ticker(ticker_string)
-    # Requesting 1-day, 1-minute interval data
-    data = ticker.history(interval="1m", period="1d")
 
-    if data.empty:
-        print(f"Error: Could not retrieve data for {ticker_string}.")
-        return None # Return None or handle error as needed
-    else:
-        # --- 1. Get the 9:30 AM Opening Price (More Robust Method) ---
-        try:
-            # The first row (index 0) of the 1-minute data for the current day
-            # is typically the 9:30 AM bar. We use the 'Open' price 
-            # as it represents the official price at 9:30:00 AM.
-            price_at_open = data.iloc[0]['Open']
-            
-            # Optional: Check the timestamp to confirm it's 9:30 AM
-            first_timestamp = data.index[0]
-            if first_timestamp.tz_localize(None).time().strftime('%H:%M:%S') != '09:30:00':
-                 print(f"Warning: First data point for {ticker_string} is at {first_timestamp.time().strftime('%H:%M:%S')}, not 09:30:00.")
-
-            open_and_current.append(round(float(price_at_open), 2))
-            
-        except IndexError:
-            # This can happen if the market hasn't opened yet and the DataFrame is empty/incomplete
-            print(f"\nCould not find 9:30 AM price for {ticker_string}. Market may not be open yet.")
-            return None # Return None or handle error as needed
-
-        # --- 2. Get the Current Price (remains the same) ---
-        current_price = data['Close'].iloc[-1]
-        # last_update_time = data.index[-1].strftime('%H:%M:%S') # Retaining for reference
-        open_and_current.append(round(float(current_price), 2))
+    # 1. Get the official Daily OPEN price using a 1-day interval
+    daily_data = ticker.history(interval="1d", period="2d", auto_adjust=False)
+    
+    if daily_data.empty or len(daily_data) < 2:
+        print(f"Error: Could not retrieve daily data for {ticker_string}.")
+        return None
         
-        return open_and_current
+    # The 'Open' price of the last (today's) row is the official 9:30 AM open
+    price_at_open = daily_data.iloc[-1]['Open']
+    open_and_current.append(round(float(price_at_open), 2))
+
+    # 2. Get the Current Price using the 1-minute interval data
+    # (Use 1m data to ensure you get the absolute latest minute)
+    minute_data = ticker.history(interval="1m", period="1d", auto_adjust=False)
+    
+    if minute_data.empty:
+        # Fallback to daily close if 1m data fails
+        current_price = daily_data.iloc[-1]['Close'] 
+    else:
+        # Use Adj Close from the 1m data for the latest price
+        current_price = minute_data['Adj Close'].iloc[-1]
+        
+    open_and_current.append(round(float(current_price), 2))
+    return open_and_current
     
 def run_calcs(portfolio_data):
     tickers = portfolio_data["tickers"]
@@ -56,6 +48,8 @@ def run_calcs(portfolio_data):
     for ticker in portfolio_data["tickers"]:
         price_data.append(return_open_and_current(ticker))
     
+    # pene = [[50.04, price_data[0][1]], [79.83, price_data[1][1]],[101.12, price_data[2][1]],[26.91, price_data[3][1]]]
+    # print("what we're looking for:", pene)
     print(price_data)
     
     total_portfolio_at_open = 0
