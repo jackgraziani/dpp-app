@@ -56,10 +56,11 @@ def run_calcs(portfolio_data):
     for i in range(len(tickers)):
         total_portfolio_current += num_shares[i]*price_data[i][1]
 
+    print(price_data)
     
     dollar_change = round(total_portfolio_current - total_portfolio_at_open, 2)
     percent_change =  round(dollar_change / total_portfolio_at_open, 4)
-    return (dollar_change, percent_change)
+    return [dollar_change, percent_change]
 
 
 
@@ -77,8 +78,9 @@ def main():
         
 
 
-    #portfolio_data = {"tickers": ["MRK", "PINS", "BKR", "CF"], "num_shares": [11, 11, 11, 11]}
-    raw_output = run_calcs(portfolio_data)
+    portfolio_data = {"tickers": ["MRK", "PINS", "BKR", "CF"], "num_shares": [11, 11, 11, 11]}
+    raw_output_dirty = run_calcs(portfolio_data) # might do 0.8999999 instead of 0.90
+    raw_output = [raw_output_dirty[0], round(raw_output_dirty[1], 4)]
     formatted_output = []
     if raw_output[0] < 0:
         formatted_output.append("-$" + str(raw_output[0])[1:])
