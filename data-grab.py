@@ -35,7 +35,6 @@ def return_open_and_current(ticker_string):
         # 4. Get the Current Price (This part remains the same)
         current_price = data['Close'].iloc[-1]
         last_update_time = data.index[-1].strftime('%H:%M:%S')
-        print(last_update_time)
         open_and_current.append(round(float(current_price), 2))
         return(open_and_current)
     
@@ -55,14 +54,6 @@ def run_calcs(portfolio_data):
     for i in range(len(tickers)):
         total_portfolio_current += num_shares[i]*price_data[i][1]
 
-    print("price data:")
-    print(price_data)
-
-    print("current:")
-    print(total_portfolio_current)
-
-    print("at open:")
-    print(total_portfolio_at_open)
     
     dollar_change = round(total_portfolio_current - total_portfolio_at_open, 2)
     percent_change =  round(dollar_change / total_portfolio_at_open, 4)
@@ -73,8 +64,19 @@ def run_calcs(portfolio_data):
 def main():
 
     portfolio_data = {"tickers": ["MRK", "PINS", "BKR", "CF"], "num_shares": [11, 11, 11, 11]}
-    print(run_calcs(portfolio_data))
-    
+    raw_output = run_calcs(portfolio_data)
+    formatted_output = []
+    if raw_output[0] < 0:
+        formatted_output.append("-$" + str(raw_output[0])[1:])
+        formatted_output.append("-"+str(raw_output[1]*100)[1:]+"%") 
+    else:
+        formatted_output.append("+$" + str(raw_output[0]))
+        formatted_output.append("+"+str(raw_output[1]*100)+"%")
+   
+    for data_point in formatted_output:
+        print(data_point)
+
+
 
 if __name__ == "__main__":
     main()
