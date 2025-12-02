@@ -3,6 +3,8 @@ import pandas as pd
 from datetime import datetime
 import pytz
 
+# TODO: robust error catching (i.e., file doesn't break down when can't find the data)
+
 # --- Configuration ---
 def return_open_and_current(ticker_string):
     open_and_current = []
@@ -62,8 +64,20 @@ def run_calcs(portfolio_data):
 
 
 def main():
+    portfolio_data = {"tickers": [], "num_shares": []}
+    still_asking = True
+    while still_asking:
+        ticker = input('enter a ticker ("!" to stop): ').upper()
+        if ticker != "!":
+            num_shares = int(input("How many shares: "))
+            portfolio_data["tickers"].append(ticker)
+            portfolio_data["num_shares"].append(num_shares)
+        else:
+            still_asking = False
+        
 
-    portfolio_data = {"tickers": ["MRK", "PINS", "BKR", "CF"], "num_shares": [11, 11, 11, 11]}
+
+    #portfolio_data = {"tickers": ["MRK", "PINS", "BKR", "CF"], "num_shares": [11, 11, 11, 11]}
     raw_output = run_calcs(portfolio_data)
     formatted_output = []
     if raw_output[0] < 0:
@@ -75,8 +89,6 @@ def main():
    
     for data_point in formatted_output:
         print(data_point)
-
-
 
 if __name__ == "__main__":
     main()
