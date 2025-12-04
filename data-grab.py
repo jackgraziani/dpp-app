@@ -26,23 +26,25 @@ def return_prev_close_and_current(ticker_string):
     """
     prices = []
     ticker = yf.Ticker(ticker_string)
+    daily_data = None # Initialize to handle scope
 
     # --- 1. Get the official Previous Close Price ---
     # Retrieve 2 days of daily data (1d interval) to ensure we get the 
     # row corresponding to the previous trading day's close.
     # We use 'period="2d"' to get *up to* the last two daily records.
-    daily_data = ticker.history(interval="1d", period="2d", auto_adjust=False)
-    
-    # Check if we have at least 2 rows of daily data (yesterday and today)
+    try:
+        daily_data = ticker.history(interval="1d", period="2d", auto_adjust=False)
+    except Exception as e:
+        print(f"Error retrieving daily history for {ticker_string}: {e}")
+        return None
+
+    # Check for sufficient daily data
     if daily_data.empty or len(daily_data) < 2:
         print(f"Error: Could not retrieve sufficient daily data for {ticker_string}.")
         return None
         
     # The 'Close' price of the **second-to-last** row (index -2) is the 
     # official previous day's close price.
-    # Note: If called *before* 9:30 AM EST, the last row will be yesterday's data,
-    # and this will return the day before's close, which is still the correct 
-    # 'Previous Close' reference value used on trading day platforms.
     try:
         previous_close = daily_data.iloc[-2]['Close']
         prices.append(round(float(previous_close), 2))
@@ -51,18 +53,42 @@ def return_prev_close_and_current(ticker_string):
         return None
 
 
-    # --- 2. Get the Current Price ---
-    # Use 1-minute interval data for the current day to get the absolute latest minute price.
-    minute_data = ticker.history(interval="1m", period="1d", auto_adjust=False)
-    
-    if minute_data.empty:
-        # Fallback to the latest daily Close/Adj Close price if 1m data fails (e.g., after market close)
-        # The last row ('iloc[-1]') contains the most recent available closing price.
-        current_price = daily_data.iloc[-1]['Close'] 
-    else:
-        # Use Adj Close from the 1m data for the latest price
-        current_price = minute_data['Adj Close'].iloc[-1]
+    # --- 2. Get the Current Price (Using .info for best result) ---
+    current_price = None
+    try:
+        current_data = ticker.info
         
+        # Priority 1: Use 'regularMarketPrice' as it's often the most recent price,
+        # including after-hours/pre-market if the market is closed.
+        current_price = current_data.get('regularMarketPrice')
+
+        # Priority 2: Fallback to 'currentPrice'
+        if current_price is None or current_price == 0:
+            current_price = current_data.get('currentPrice')
+            
+        # If both attempts failed, fall through to the minute/daily history fallback
+        if current_price is None or current_price == 0:
+             raise ValueError("Primary .info keys returned invalid data.")
+             
+    except Exception:
+        # Fallback to the historical method if .info fails or returns bad data
+        print(f"Warning: .info failed or was incomplete for {ticker_string}. Falling back to minute/daily data.")
+        
+        # Try 1-minute data for the latest minute close
+        minute_data = ticker.history(interval="1m", period="1d", auto_adjust=False)
+        
+        if minute_data.empty:
+            # Final Fallback: The latest available daily Close price
+            current_price = daily_data.iloc[-1]['Close'] 
+        else:
+            # Use Adj Close from the 1m data for the latest price
+            current_price = minute_data['Adj Close'].iloc[-1]
+    
+    # Check if a price was successfully retrieved
+    if current_price is None or current_price == 0:
+        print(f"Critical Error: Failed to retrieve current price for {ticker_string}.")
+        return None
+
     prices.append(round(float(current_price), 2))
     
     return prices
