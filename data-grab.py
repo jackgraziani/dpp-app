@@ -11,47 +11,73 @@ import pandas as pd
 from datetime import datetime
 import pytz
 
-def return_open_and_current(ticker_string):
-    open_and_current = []
+import yfinance as yf
+
+def return_prev_close_and_current(ticker_string):
+    """
+    Retrieves the previous day's close price and the current price for a given ticker.
+
+    Args:
+        ticker_string (str): The stock ticker symbol (e.g., 'AAPL', 'GOOGL').
+
+    Returns:
+        list: A list containing [previous_close_price, current_price],
+              or None if data retrieval fails.
+    """
+    prices = []
     ticker = yf.Ticker(ticker_string)
 
-    # 1. Get the official Daily OPEN price using a 1-day interval
+    # --- 1. Get the official Previous Close Price ---
+    # Retrieve 2 days of daily data (1d interval) to ensure we get the 
+    # row corresponding to the previous trading day's close.
+    # We use 'period="2d"' to get *up to* the last two daily records.
     daily_data = ticker.history(interval="1d", period="2d", auto_adjust=False)
     
+    # Check if we have at least 2 rows of daily data (yesterday and today)
     if daily_data.empty or len(daily_data) < 2:
-        print(f"Error: Could not retrieve daily data for {ticker_string}.")
+        print(f"Error: Could not retrieve sufficient daily data for {ticker_string}.")
         return None
         
-    # The 'Open' price of the last (today's) row is the official 9:30 AM open
-    price_at_open = daily_data.iloc[-1]['Open']
-    open_and_current.append(round(float(price_at_open), 2))
+    # The 'Close' price of the **second-to-last** row (index -2) is the 
+    # official previous day's close price.
+    # Note: If called *before* 9:30 AM EST, the last row will be yesterday's data,
+    # and this will return the day before's close, which is still the correct 
+    # 'Previous Close' reference value used on trading day platforms.
+    try:
+        previous_close = daily_data.iloc[-2]['Close']
+        prices.append(round(float(previous_close), 2))
+    except IndexError:
+        print(f"Error: Insufficient data points to determine previous close for {ticker_string}.")
+        return None
 
-    # 2. Get the Current Price using the 1-minute interval data
-    # (Use 1m data to ensure you get the absolute latest minute)
+
+    # --- 2. Get the Current Price ---
+    # Use 1-minute interval data for the current day to get the absolute latest minute price.
     minute_data = ticker.history(interval="1m", period="1d", auto_adjust=False)
     
     if minute_data.empty:
-        # Fallback to daily close if 1m data fails
+        # Fallback to the latest daily Close/Adj Close price if 1m data fails (e.g., after market close)
+        # The last row ('iloc[-1]') contains the most recent available closing price.
         current_price = daily_data.iloc[-1]['Close'] 
     else:
         # Use Adj Close from the 1m data for the latest price
         current_price = minute_data['Adj Close'].iloc[-1]
         
-    open_and_current.append(round(float(current_price), 2))
-    return open_and_current
+    prices.append(round(float(current_price), 2))
+    
+    return prices
     
 def run_calcs(portfolio_data):
+    print(portfolio_data)
     tickers = portfolio_data["tickers"]
     num_shares = portfolio_data["num_shares"]
     price_data = []
     
     for ticker in portfolio_data["tickers"]:
-        price_data.append(return_open_and_current(ticker))
-    
-    # pene = [[50.04, price_data[0][1]], [79.83, price_data[1][1]],[101.12, price_data[2][1]],[26.91, price_data[3][1]]]
-    # print("what we're looking for:", pene)
+        price_data.append(return_prev_close_and_current(ticker))
+
     print(price_data)
-    
+
     total_portfolio_at_open = 0
     for i in range(len(tickers)):
         total_portfolio_at_open += num_shares[i]*price_data[i][0]
@@ -81,18 +107,17 @@ def main():
 
 
     portfolio_data = {"tickers": ["BKR", "CF", "MRK", "PINS"], "num_shares": [11, 11, 11, 11]}
-    raw_output_dirty = run_calcs(portfolio_data) # might do 0.8999999 instead of 0.90
-    raw_output = [raw_output_dirty[0], round(raw_output_dirty[1], 4)]
+
+    raw_output = run_calcs(portfolio_data)
     formatted_output = []
     if raw_output[0] < 0:
         formatted_output.append("-$" + str(raw_output[0])[1:])
-        formatted_output.append("-"+str(raw_output[1]*100)[1:]+"%") 
+        formatted_output.append("-"+str(round(raw_output[1]*100, 4))[1:]+"%") 
     else:
         formatted_output.append("+$" + str(raw_output[0]))
-        formatted_output.append("+"+str(raw_output[1]*100)+"%")
+        formatted_output.append("+"+str(round(raw_output[1]*100, 4))+"%")
    
-    for data_point in formatted_output:
-        print(data_point)
+    return formatted_output
 
 if __name__ == "__main__":
-    main()
+    print(main())
