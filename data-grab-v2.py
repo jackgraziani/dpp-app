@@ -139,7 +139,7 @@ def calculate_beta(portfolio_tickers, market_ticker, lookback_years):
         if portfolio_tickers:
             port_returns = data[portfolio_tickers].pct_change().mean(axis=1)
         else:
-            return 1.0 # Default if no stocks are in the portfolio
+            return 1.0 # Default if no stocks are in the portfolio 
 
         # 3. Merge returns and calculate Beta
         combined_returns = pd.DataFrame({
