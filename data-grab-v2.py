@@ -1,7 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, time, date, timedelta
 import warnings
 
 # Suppress the specific FutureWarning related to auto_adjust default change
@@ -11,6 +11,7 @@ import warnings
 # --- Configuration ---
 TRADING_DAYS_PER_YEAR = 252
 LOOKBACK_YEARS = 5
+US_MARKET_CLOSE_TIME = time(16, 30)
 
 def return_prev_close_and_current(ticker_string):
     """
@@ -197,6 +198,65 @@ def alpha(portfolio_gain, benchmark_ticker, portfolio_tickers):
 
     return daily_alpha
 
+def get_last_updated_time(reference_ticker):
+    """
+    Determines the last update time based on the market data availability, 
+    returning the specific date formatted as MM/DD/YY.
+    """
+    from datetime import datetime, time
+    
+    # Define US market close time for comparison (4:30 PM EST)
+    US_MARKET_CLOSE_TIME = time(16, 30) 
+    
+    try:
+        # Get the current market data timestamp for a benchmark ticker
+        ref_ticker = yf.Ticker(reference_ticker)
+        ref_info = ref_ticker.info
+        
+        # regularMarketTime is a Unix timestamp (seconds since epoch)
+        market_timestamp = ref_info.get('regularMarketTime') 
+        
+        # Use the time when the code is run
+        current_datetime = datetime.now()
+        
+        # --- NEW DATE FORMAT: "%m/%d/%y" ---
+        current_date_str = current_datetime.strftime("%m/%d/%y") 
+        current_time_str = current_datetime.strftime("%I:%M%p").replace(" 0", " ")
+        
+        if market_timestamp:
+            # Convert Unix timestamp to a datetime object
+            data_datetime = datetime.fromtimestamp(market_timestamp)
+            
+            # --- NEW DATE FORMAT: "%m/%d/%y" ---
+            data_date_str = data_datetime.strftime("%m/%d/%y")
+            
+            # Check if the market data timestamp is from today
+            if data_datetime.date() == current_datetime.date() and current_datetime.time() < US_MARKET_CLOSE_TIME:
+                # Market is open or before market close on a trading day
+                # Return the execution time and date
+                return f"{current_time_str} on {current_date_str}" 
+            else:
+                # Market is closed (after 4:30 PM or weekend/holiday)
+                
+                # If running after 4:30 PM today, the data time is the close time on today's date
+                if current_datetime.time() >= US_MARKET_CLOSE_TIME and data_datetime.date() == current_datetime.date():
+                    return f"4:30PM on {data_date_str}"
+                
+                # Otherwise, the data time reflects the last market close (4:30PM on the data's date)
+                return f"4:30PM on {data_date_str}"
+
+        
+        # Fallback if no timestamp is retrieved
+        return f"{current_time_str} on {current_date_str} (Live Run Fallback)"
+        
+    except Exception as e:
+        # If yfinance retrieval fails entirely, return the current time
+        current_datetime = datetime.now()
+        current_date_str = current_datetime.strftime("%m/%d/%y") # Apply new format here too
+        current_time_str = current_datetime.strftime("%I:%M%p").replace(" 0", " ")
+        print(f"Error fetching market time: {e}. Defaulting to current time.")
+        return f"{current_time_str} on {current_date_str} (Error Fallback)"
+
 def main():
     # Example input section
     portfolio_data = {"tickers": [], "num_shares": []}
@@ -244,7 +304,8 @@ def main():
     else:
         formatted_alpha = "+"+str(round((raw_alpha*100), 2))+"%"
 
-
+    last_updated = get_last_updated_time("SPY")
+    print(f"Last updated: {last_updated}")
     print(f"[Daily] Potfolio Return: {formatted_equity_output[1]} ({formatted_equity_output[0]})")
     print(f"[Daily] Alpha Generated: {formatted_alpha}")
 
