@@ -9,6 +9,54 @@ TRADING_DAYS_PER_YEAR = 252
 LOOKBACK_YEARS = 5
 US_MARKET_CLOSE_TIME = time(16, 30)
 
+import pandas as pd
+import ftplib
+import io
+
+def get_all_tickers():
+    try:
+        # Connect to NASDAQ FTP
+        ftp = ftplib.FTP('ftp.nasdaqtrader.com')
+        ftp.login()
+        ftp.cwd('SymbolDirectory')
+        
+        all_dfs = []
+        
+        # 'nasdaqlisted.txt' = NASDAQ stocks
+        # 'otherlisted.txt' = NYSE and AMEX stocks
+        files_to_download = ['nasdaqlisted.txt', 'otherlisted.txt']
+        
+        for filename in files_to_download:
+            #print(f"Downloading {filename}...")
+            bio = io.BytesIO()
+            ftp.retrbinary(f"RETR {filename}", bio.write)
+            bio.seek(0)
+            
+            # Read the pipe-delimited file
+            df = pd.read_csv(bio, sep='|')
+            
+            # The last row is usually file metadata (e.g., "File Creation Time"), so we drop it
+            # We also ensure the 'Symbol' column exists
+            if 'Symbol' in df.columns:
+                df = df[:-1] # Remove last row
+                all_dfs.append(df)
+        
+        ftp.quit()
+        
+        # Combine dataframes
+        final_df = pd.concat(all_dfs, ignore_index=True)
+        
+        # Extract the list of symbols
+        ticker_list = final_df['Symbol'].unique().tolist()
+        
+        return ticker_list
+
+    except Exception as e:
+        print(f"Error fetching tickers: {e}")
+        return []
+
+
+
 def return_prev_close_and_current(ticker_string):
     """
     Retrieves the previous day's close price and the current price for a given ticker.
@@ -261,12 +309,37 @@ def backtest_portfolio(portfolio_data, period_years):
     #print(f"Initial Value:   ${start_val:,.2f}")
     #print(f"Final Value:     ${end_val:,.2f}")
     #print("-" * 30)
-    print(f"Portfolio Return: {portfolio_total_return:.2%}")
-    print(f"S&P 500 Return:   {benchmark_total_return:.2%}")
+    #print(f"Portfolio Return: {portfolio_total_return:.2%}")
+    #print(f"S&P 500 Return:   {benchmark_total_return:.2%}")
     #print(f"Period Beta:      {beta_period:.2f}")
-    print(f"Alpha Generated:  {alpha_period:.2%} (Excess return vs risk-adjusted expectation)")
+    #print(f"Alpha Generated:  {alpha_period:.2%} (Excess return vs risk-adjusted expectation)")
 
     return [100*round(float(portfolio_total_return), 4),100*round(float(benchmark_total_return),4), 100*round(float(alpha_period),4)]
+
+def filter_winners(all_tickers):
+    winners = []
+    cutoff_timestamp = (datetime.now() - timedelta(days=LOOKBACK_YEARS*365)).timestamp()
+
+    for ticker in all_tickers:
+        valid = yf.Ticker(ticker)
+        if len(valid.info) > 1:
+            # Check if the stock has enough history
+            start_epoch = valid.info.get('firstTradeDateEpochUtc')
+            
+            # If start date is unknown or stock is newer than cutoff, skip it
+            if start_epoch is None or start_epoch > cutoff_timestamp:
+                continue
+            
+            # Run backtest safely
+            results = backtest_portfolio({"tickers": [ticker], "num_shares": [1]}, LOOKBACK_YEARS)
+            
+            # Check if backtest returned valid results (not None)
+            if results is not None:
+                alpha = results[2]
+                if alpha > 0:
+                    winners.append(ticker)
+                    print(alpha)
+    return winners
 
 def main():
     # Example input section
@@ -309,6 +382,7 @@ def main():
     raw_alpha = alpha(percent_change, benchmark_ticker, portfolio_data["tickers"])
     formatted_alpha = f"{raw_alpha*100:+.2f}%"
     raw_backtest_results = backtest_portfolio(portfolio_data, LOOKBACK_YEARS)
+    #print(raw_backtest_results)
     formatted_backtest_results = []
     for result in raw_backtest_results:
         if result >= 0:
@@ -317,15 +391,20 @@ def main():
             formatted_backtest_results.append(round(result, 4))
     print("===============")
     last_updated = get_last_updated_time("SPY")
-    print(f"Last updated: {last_updated}")
-    print()
-    print(f"[Daily] Portfolio Return: {formatted_equity}")
-    print(f"[Daily] Alpha: {formatted_alpha}")
-    print()
-    # --- Run Backtest Prompt ---
-    print(f"[Backtest {LOOKBACK_YEARS}y] Portfolio Return: {formatted_backtest_results[0]}%")
-    print(f"[Backtest {LOOKBACK_YEARS}y] Benchmark Return: {formatted_backtest_results[1]}%")
-    print(f"[Backtest {LOOKBACK_YEARS}y] Alpha: {formatted_backtest_results[2]}%")
-    print("===============")
+    # print(f"Last updated: {last_updated}")
+    # print()
+    # print(f"[Daily] Portfolio Return: {formatted_equity}")
+    # print(f"[Daily] Alpha: {formatted_alpha}")
+    # print()
+    # # --- Run Backtest Prompt ---
+    # print(f"[Backtest {LOOKBACK_YEARS}y] Portfolio Return: {formatted_backtest_results[0]}%")
+    # print(f"[Backtest {LOOKBACK_YEARS}y] Benchmark Return: {formatted_backtest_results[1]}%")
+    # print(f"[Backtest {LOOKBACK_YEARS}y] Alpha: {formatted_backtest_results[2]}%")
+    # print("===============")
+
+    print(filter_winners(get_all_tickers()))
+    #print(filter_winners(['GOOGL']))
+
+
 if __name__ == "__main__":
     main()

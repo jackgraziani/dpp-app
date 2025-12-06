@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime, time, date, timedelta
 import warnings
 
+#ONLY DOES DAILY
 # --- Configuration ---
 TRADING_DAYS_PER_YEAR = 252
 LOOKBACK_YEARS = 5
@@ -182,91 +183,6 @@ def get_last_updated_time(reference_ticker):
         current_datetime = datetime.now()
         return f"{current_datetime.strftime('%I:%M%p')} (Error Fallback)"
 
-# --- NEW FUNCTION: Backtest ---
-def backtest_portfolio(portfolio_data, period_years):
-    """
-    Backtests the portfolio over a specified number of years.
-    Returns Total Portfolio Return, Total Benchmark Return, and Total Alpha.
-    """
-    tickers = portfolio_data["tickers"]
-    num_shares = portfolio_data["num_shares"]
-    benchmark_ticker = "^GSPC"
-    rfr_ticker = "^TNX"
-    
-    # 1. Define Dates
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=period_years*365)
-    
-    # 2. Bulk Download Data (Portfolio + Benchmark + RFR)
-    download_list = tickers + [benchmark_ticker, rfr_ticker]
-    try:
-        # We use 'Adj Close' for backtesting to account for dividends/splits over time
-        raw_data = yf.download(download_list, start=start_date, end=end_date, progress=False, auto_adjust=False)
-        price_data = raw_data['Close']
-        
-        # Clean data: Drop rows where the benchmark or any stock is NaN (simulate 'common trading days')
-        price_data = price_data.dropna()
-        
-        if price_data.empty:
-            print("Error: No overlapping data found for these tickers in the given period.")
-            return
-
-    except Exception as e:
-        print(f"Backtest Data Error: {e}")
-        return
-
-    # 3. Calculate Portfolio Value History
-    # Create a DataFrame to hold value of each position
-    position_values = pd.DataFrame(index=price_data.index)
-    
-    for i, ticker in enumerate(tickers):
-        if ticker in price_data.columns:
-            position_values[ticker] = price_data[ticker] * num_shares[i]
-            
-    # Sum across rows to get total daily portfolio value
-    portfolio_series = position_values.sum(axis=1)
-    
-    # 4. Calculate Total Returns (Cumulative for the period)
-    start_val = portfolio_series.iloc[0]
-    end_val = portfolio_series.iloc[-1]
-    portfolio_total_return = (end_val - start_val) / start_val
-    
-    benchmark_start = price_data[benchmark_ticker].iloc[0]
-    benchmark_end = price_data[benchmark_ticker].iloc[-1]
-    benchmark_total_return = (benchmark_end - benchmark_start) / benchmark_start
-    
-    # 5. Calculate Average RFR for the period
-    # TNX is in yield percentage (e.g., 4.5), need decimal (0.045)
-    avg_rfr_annual = price_data[rfr_ticker].mean() / 100
-    # De-annualize RFR for the specific period duration (simple approx)
-    period_rfr = avg_rfr_annual * period_years
-
-    # 6. Calculate Beta specific to this backtest period
-    # We calculate daily returns specifically for this window to get an accurate Beta
-    port_daily_rets = portfolio_series.pct_change().dropna()
-    bench_daily_rets = price_data[benchmark_ticker].pct_change().dropna()
-    
-    # Merge and align
-    combined = pd.DataFrame({'Port': port_daily_rets, 'Bench': bench_daily_rets}).dropna()
-    cov_matrix = np.cov(combined['Bench'], combined['Port'])
-    beta_period = cov_matrix[0, 1] / cov_matrix[0, 0] # Covariance / Variance of Market
-
-    # 7. Calculate Jensen's Alpha (Over the period)
-    # Alpha = Actual_Return - [Risk_Free + Beta * (Market_Return - Risk_Free)]
-    expected_return = period_rfr + beta_period * (benchmark_total_return - period_rfr)
-    alpha_period = portfolio_total_return - expected_return
-    
-    # --- Output ---
-    #print(f"Backtest Period: {price_data.index[0].date()} to {price_data.index[-1].date()}")
-    #print(f"Initial Value:   ${start_val:,.2f}")
-    #print(f"Final Value:     ${end_val:,.2f}")
-    #print("-" * 30)
-    #print(f"Portfolio Return: {portfolio_total_return:.2%}")
-    #print(f"S&P 500 Return:   {benchmark_total_return:.2%}")
-    #print(f"Period Beta:      {beta_period:.2f}")
-    #print(f"Alpha Generated:  {alpha_period:.2%} (Excess return vs risk-adjusted expectation)")
-
-    return [100*round(float(portfolio_total_return), 4),100*round(float(benchmark_total_return),4), 100*round(float(alpha_period),4)]
 
 def main():
     # Example input section
@@ -308,24 +224,13 @@ def main():
     benchmark_ticker = "^GSPC" 
     raw_alpha = alpha(percent_change, benchmark_ticker, portfolio_data["tickers"])
     formatted_alpha = f"{raw_alpha*100:+.2f}%"
-    raw_backtest_results = backtest_portfolio(portfolio_data, LOOKBACK_YEARS)
-    formatted_backtest_results = []
-    for result in raw_backtest_results:
-        if result >= 0:
-            formatted_backtest_results.append("+"+str(round(result, 4)))
-        else:
-            formatted_backtest_results.append(round(result, 4))
+
     print("===============")
     last_updated = get_last_updated_time("SPY")
     print(f"Last updated: {last_updated}")
     print()
     print(f"[Daily] Portfolio Return: {formatted_equity}")
     print(f"[Daily] Alpha: {formatted_alpha}")
-    print()
-    # --- Run Backtest Prompt ---
-    print(f"[Backtest {LOOKBACK_YEARS}y] Portfolio Return: {formatted_backtest_results[0]}%")
-    print(f"[Backtest {LOOKBACK_YEARS}y] Benchmark Return: {formatted_backtest_results[1]}%")
-    print(f"[Backtest {LOOKBACK_YEARS}y] Alpha: {formatted_backtest_results[2]}%")
     print("===============")
 if __name__ == "__main__":
     main()
